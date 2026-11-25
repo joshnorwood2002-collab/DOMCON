@@ -1,0 +1,6 @@
+/* PLACEHOLDER styles. */
+html, body { margin: 0; height: 100%; background: #04102a; color: #e8f4ff; font-family: system-ui, sans-serif; }
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+#app canvas { flex: 1; min-height: 0; width: 100%; touch-action: none; display: block; }
+#app .bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; background: #071833; align-items: center; }
+#app button { font: inherit; padding: 6px 10px; }

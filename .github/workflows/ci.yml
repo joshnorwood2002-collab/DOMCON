@@ -1,0 +1,44 @@
+name: CI
+
+# Type-checks, unit-tests, builds every storefront target and runs the browser
+# tests on each push and pull request. The zips it uploads are the exact files
+# to hand to each storefront.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: game
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: game/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run e2e
+      - name: Upload storefront zips
+        uses: actions/upload-artifact@v4
+        with:
+          name: storefront-zips
+          path: game/dist/zips/*.zip
+          if-no-files-found: error
+          retention-days: 30

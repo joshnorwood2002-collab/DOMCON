@@ -1,0 +1,24 @@
+{
+  "name": "domcon-game",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A self-contained browser game: static files, no server, no runtime dependencies.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "node scripts/build.ts --target=web --serve",
+    "build": "node scripts/build.ts --all",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "e2e": "node --test --test-concurrency=1 \"e2e/**/*.e2e.ts\"",
+    "check": "npm run typecheck && npm test && npm run build && npm run e2e"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.7",
+    "esbuild": "0.28.2",
+    "playwright": "1.63.0",
+    "typescript": "6.0.2"
+  }
+}

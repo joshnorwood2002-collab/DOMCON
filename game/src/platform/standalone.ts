@@ -1,0 +1,24 @@
+import { safeLocalStorage, type AdResult, type Platform } from './types.ts';
+
+const NO_ADS: AdResult = { completed: false, failure: 'unsupported' };
+
+/** Self-hosted and itch.io builds: no SDK, no adverts, saves in localStorage. */
+export function createStandalonePlatform(id: 'web' | 'itch'): Platform {
+  return {
+    id,
+    hasAds: false,
+    init: () => Promise.resolve(),
+    loadingStart: () => {},
+    loadingStop: () => {},
+    gameplayStart: () => {},
+    gameplayStop: () => {},
+    happyMoment: () => {},
+    showInterstitial: () => Promise.resolve(NO_ADS),
+    showRewarded: () => Promise.resolve(NO_ADS),
+    storageGet: (key) => safeLocalStorage.get(key),
+    storageSet: (key, value) => {
+      safeLocalStorage.set(key, value);
+    },
+    storageRemove: (key) => safeLocalStorage.remove(key),
+  };
+}

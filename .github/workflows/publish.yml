@@ -1,0 +1,124 @@
+name: Publish
+
+# Runs on every push to the default branch (and on demand). Each destination is
+# optional and switches itself on once its one-time setup has been done:
+#
+#   GitHub Pages  - Settings > Pages > Source: "GitHub Actions"
+#   itch.io       - repository secret BUTLER_API_KEY and repository variable
+#                   ITCH_TARGET (for example "your-name/your-game")
+#
+# Until then the matching job reports "skipped" instead of failing.
+
+on:
+  push:
+    paths:
+      - 'game/**'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      pages_enabled: ${{ steps.pages.outputs.enabled }}
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: game
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: game/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Is GitHub Pages switched on?
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/pages" --silent 2>/dev/null; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Pages is not switched on yet (Settings > Pages > Source: GitHub Actions). Skipping the Pages deploy."
+          fi
+      - name: Upload Pages site
+        if: steps.pages.outputs.enabled == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: game/dist/web
+      - name: Upload itch.io build
+        uses: actions/upload-artifact@v4
+        with:
+          name: itch-build
+          path: game/dist/itch
+          if-no-files-found: error
+          retention-days: 7
+
+  pages:
+    needs: build
+    if: needs.build.outputs.pages_enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  itch:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+      ITCH_TARGET: ${{ vars.ITCH_TARGET }}
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Is itch.io publishing set up?
+        id: ready
+        run: |
+          if [ -n "$BUTLER_API_KEY" ] && [ -n "$ITCH_TARGET" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::itch.io publishing is not set up yet (secret BUTLER_API_KEY and variable ITCH_TARGET). Skipping."
+          fi
+      - uses: actions/download-artifact@v4
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          name: itch-build
+          path: itch-build
+      - name: Install butler (itch.io's official upload tool)
+        if: steps.ready.outputs.ok == 'true'
+        run: |
+          curl -fsSL -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip -q butler.zip -d butler
+          chmod +x butler/butler
+          ./butler/butler -V
+      - name: Push the HTML5 build to itch.io
+        if: steps.ready.outputs.ok == 'true'
+        run: ./butler/butler push itch-build "${ITCH_TARGET}:html5" --userversion "${VERSION}"
