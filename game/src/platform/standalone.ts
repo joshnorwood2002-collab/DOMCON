@@ -2,8 +2,8 @@ import { safeLocalStorage, type AdResult, type Platform } from './types.ts';
 
 const NO_ADS: AdResult = { completed: false, failure: 'unsupported' };
 
-/** Self-hosted and itch.io builds: no SDK, no adverts, saves in localStorage. */
-export function createStandalonePlatform(id: 'web' | 'itch'): Platform {
+/** Self-hosted, itch.io and plain portal builds: no SDK, no adverts, saves in localStorage. */
+export function createStandalonePlatform(id: 'web' | 'itch' | 'portal'): Platform {
   return {
     id,
     hasAds: false,

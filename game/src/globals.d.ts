@@ -1,5 +1,5 @@
 // Compile-time constants injected by scripts/build.ts.
-declare const __PLATFORM__: 'web' | 'itch' | 'crazygames' | 'gamedistribution';
+declare const __PLATFORM__: 'web' | 'itch' | 'portal' | 'crazygames' | 'gamedistribution';
 declare const __VERSION__: string;
 declare const __DEV__: boolean;
 declare const __TITLE__: string;

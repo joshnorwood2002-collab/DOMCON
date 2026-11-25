@@ -18,7 +18,7 @@ export interface PlatformHooks {
 }
 
 export interface Platform {
-  readonly id: 'web' | 'itch' | 'crazygames' | 'gamedistribution';
+  readonly id: 'web' | 'itch' | 'portal' | 'crazygames' | 'gamedistribution';
   /**
    * True when the host can show real adverts. When false, the boosts that a
    * portal build puts behind a rewarded ad are simply free on a cooldown.

@@ -8,6 +8,8 @@ import { buildTarget, serveDirectory, type Target } from '../scripts/build.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ARTIFACTS = path.join(here, 'artifacts');
+// Test builds go to their own folder so they never disturb the release builds in dist/.
+process.env['GF_DIST'] ??= path.join(ARTIFACTS, 'dist');
 
 export interface Harness {
   browser: Browser;

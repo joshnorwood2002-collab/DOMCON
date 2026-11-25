@@ -9,7 +9,10 @@
 // whether outbound links (tip jar, store page) are allowed:
 //   web               GitHub Pages or any static host. Tip link allowed.
 //   itch              itch.io HTML5 upload. Tip link points at the itch page.
-//   crazygames        CrazyGames SDK v3. No outbound links.
+//   portal            Any web-game portal that wants a plain HTML5 zip: no SDK,
+//                     no adverts, no outbound links. Use this for a CrazyGames
+//                     Basic Launch.
+//   crazygames        CrazyGames SDK v3, for a CrazyGames Full Launch. No outbound links.
 //   gamedistribution  GameDistribution HTML5 SDK. No outbound links.
 
 import * as esbuild from 'esbuild';
@@ -20,7 +23,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const TARGETS = ['web', 'itch', 'crazygames', 'gamedistribution'] as const;
+export const TARGETS = ['web', 'itch', 'portal', 'crazygames', 'gamedistribution'] as const;
 export type Target = (typeof TARGETS)[number];
 
 export interface GameConfig {
@@ -81,7 +84,8 @@ function buildOptions(target: Target, config: GameConfig, version: string, dev: 
       __DEV__: JSON.stringify(dev),
       __TITLE__: JSON.stringify(config.title),
       __TIP_URL__: JSON.stringify(tipUrl),
-      __GD_GAME_ID__: JSON.stringify(config.gameDistributionId),
+      // GF_GD_GAME_ID lets tests build with a game ID without editing the config file.
+      __GD_GAME_ID__: JSON.stringify(process.env['GF_GD_GAME_ID'] ?? config.gameDistributionId),
     },
   };
 }

@@ -62,7 +62,6 @@ async function start(): Promise<void> {
   let hostMuted = false;
   let audio: AudioEngine | null = null;
   const syncAudioSuspend = (): void => audio?.setSuspended(hostMuted || document.hidden);
-  platform.loadingStart();
   await withTimeout(
     platform.init({
       setPaused: (value) => {
@@ -75,6 +74,8 @@ async function start(): Promise<void> {
     }),
     PLATFORM_INIT_TIMEOUT_MS,
   );
+  // Portal SDKs accept calls only once they have started, so loading is reported from here.
+  platform.loadingStart();
 
   const storage: SaveStorage = {
     get: (key) => platform.storageGet(key),
@@ -225,6 +226,8 @@ async function start(): Promise<void> {
 
   function replaceState(next: GameState): void {
     state = next;
+    // An imported save starts its clock now: time since it was exported is not paid as offline income.
+    state.lastSeen = Date.now();
     invalidateModifiers(state);
     pendingOffline = null;
     session.reset();
@@ -473,9 +476,16 @@ async function start(): Promise<void> {
   function frame(now: number): void {
     const elapsed = Math.max(0, (now - lastFrame) / 1000);
     lastFrame = now;
+    // While the tab is hidden, and until its return has been handled, time is accounted for
+    // as offline income (see the visibility handler); counting it here too would pay it twice.
+    if (hiddenAt !== 0) {
+      requestAnimationFrame(frame);
+      return;
+    }
     if (!paused) {
-      // A long gap means the tab was in the background; frames that are merely slow are capped so nothing jumps.
-      advance(elapsed > 1 ? elapsed : Math.min(elapsed, 0.1));
+      // Income follows real time even when frames are slow or the browser throttles them;
+      // the scene itself never moves more than a quarter of a second per frame (see advance).
+      advance(Math.min(elapsed, 3600));
     }
     renderer.draw(session.scene());
     sinceUi += elapsed;
@@ -492,6 +502,8 @@ async function start(): Promise<void> {
     syncAudioSuspend();
     if (document.hidden) {
       hiddenAt = Date.now();
+      // Offline income is measured from this moment, not from when the page was first opened.
+      state.lastSeen = hiddenAt;
       save(true);
       if (playing) platform.gameplayStop();
       return;
