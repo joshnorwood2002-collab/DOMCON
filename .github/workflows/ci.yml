@@ -7,6 +7,8 @@ name: CI
 on:
   push:
   pull_request:
+  # "Run workflow" in the Actions tab makes a fresh set of zips at any time.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -41,4 +43,4 @@ jobs:
           name: storefront-zips
           path: game/dist/zips/*.zip
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90

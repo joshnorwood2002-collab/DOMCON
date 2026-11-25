@@ -4,14 +4,39 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="%THEME_COLOR%">
+<meta name="color-scheme" content="dark">
 <meta name="description" content="%DESCRIPTION%">
 <title>%TITLE% - %TAGLINE%</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+/* The loading screen. Kept inline so it paints before game.css and game.js have arrived. */
+html, body { margin: 0; height: 100%; background: #030814; }
+#boot {
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: radial-gradient(120% 90% at 50% 0%, #0d4f86 0%, #06153a 55%, #030814 100%);
+  color: #e9f5ff; text-align: center;
+  font-family: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  pointer-events: none;
+  transition: opacity 0.35s ease-out, visibility 0s linear 0.35s;
+}
+#boot svg { width: 84px; height: 84px; animation: boot-bob 2.4s ease-in-out infinite; }
+#boot h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.3em; text-indent: 0.3em; text-transform: uppercase; }
+#boot p { margin: 0; color: #9bb3cc; font-size: 14px; font-weight: 600; letter-spacing: 0.04em; }
+.game-ready #boot { opacity: 0; visibility: hidden; }
+@keyframes boot-bob { 0%, 100% { transform: translateY(-5px); } 50% { transform: translateY(5px); } }
+@media (prefers-reduced-motion: reduce) { #boot svg { animation: none; } #boot { transition: none; } }
+</style>
 <link rel="stylesheet" href="game.css">
 %PLATFORM_HEAD%
 </head>
 <body>
 <div id="app"></div>
+<div id="boot" aria-hidden="true">
+<svg viewBox="0 0 64 64" fill="none"><defs><radialGradient id="boot-glow" cx="50%" cy="38%" r="60%"><stop offset="0" stop-color="#9ffcf0"/><stop offset="0.5" stop-color="#28c7d9"/><stop offset="1" stop-color="#0b2a66"/></radialGradient></defs><path d="M12 34c0-13 9-22 20-22s20 9 20 22c-3 3-6 3-9 0-4 4-7 4-11 0-4 4-7 4-11 0-3 3-6 3-9 0z" fill="url(#boot-glow)"/><g stroke="#7fe9ee" stroke-width="2.4" stroke-linecap="round" opacity="0.85"><path d="M22 38c-2 6 2 9 0 15"/><path d="M32 40c2 6-2 9 0 15"/><path d="M42 38c2 6-2 9 0 15"/></g></svg>
+<h1>%TITLE%</h1>
+<p>%TAGLINE%</p>
+</div>
 <noscript>%TITLE% needs JavaScript to run.</noscript>
 <script src="game.js"></script>
 </body>

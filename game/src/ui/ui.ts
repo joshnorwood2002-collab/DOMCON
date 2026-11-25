@@ -1,71 +1,164 @@
-// PLACEHOLDER interface: a canvas and a strip of buttons, enough to play.
-// Implements the Ui contract exactly.
+// The interface: the page layout, the layer over the play area, the side
+// panel and the dialogs. Everything is plain DOM, built once; update() then
+// changes only the nodes whose values have changed.
+
 import type { Ui, UiHost } from '../contracts.ts';
 import { formatNumber } from '../core/format.ts';
-import { GENERATORS } from '../game/content.ts';
-import { availableResearch, canPublish, depthOfStep, diveBlock, generatorCost, generatorUnlocked, hullCost, hullNeeded, passiveRate, renownOnPublish, surveyProgress } from '../game/economy.ts';
+import { diveBlock, passiveRate } from '../game/economy.ts';
+import type { GameState } from '../game/state.ts';
+import { createAnnouncer } from './announce.ts';
+import { createDialogs } from './dialogs.ts';
+import { el, isControl, isTextField, liveAttr, liveClass } from './dom.ts';
+import { createOverlay } from './overlay.ts';
+import { createPanel } from './panel.ts';
+import { TAB_IDS, type Tick, type UiContext } from './types.ts';
+
+/** A play area at least this big gets the roomier arrangement of its overlays. */
+const ROOMY_WIDTH = 720;
+const ROOMY_HEIGHT = 320;
+/** A play area at least this big has room for two discovery cards at once. */
+const TWO_CARDS_WIDTH = 560;
+const TWO_CARDS_HEIGHT = 380;
+
+/** True when the browser is drawing a focus ring on `node`, which means it was reached with the keyboard. */
+function focusShowsRing(node: Element): boolean {
+  try {
+    return node.matches(':focus-visible');
+  } catch {
+    // An older browser without :focus-visible: assume the keyboard, the safer reading.
+    return true;
+  }
+}
 
 export function createUi(root: HTMLElement, host: UiHost): Ui {
-  root.innerHTML = '';
-  const canvas = document.createElement('canvas');
-  const bar = document.createElement('div');
-  bar.className = 'bar';
-  const info = document.createElement('span');
-  info.id = 'hud';
-  const hint = document.createElement('em');
-  hint.id = 'hint';
-  const button = (id: string, onClick: () => void): HTMLButtonElement => {
-    const element = document.createElement('button');
-    element.id = id;
-    element.addEventListener('click', onClick);
-    bar.appendChild(element);
-    return element;
+  root.textContent = '';
+  root.classList.add('gf');
+
+  const stage = el('div', 'gf-stage');
+  const canvas = el('canvas', 'gf-canvas');
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'The sea. Tap the glowing creatures to scan them.');
+
+  let refreshing = false;
+  let lastState: GameState | null = null;
+
+  const ctx: UiContext = {
+    host,
+    num: (value) => formatNumber(value, false, host.state.settings.scientific),
+    rate: (value) => formatNumber(value, true, host.state.settings.scientific),
+    selectTab: (tab) => panel.select(tab),
+    toast: (message, kind = 'info') => overlay.toast(message, kind),
+    refresh: () => update(),
+    openSettings: () => dialogs.showSettings(),
+    askPublish: () => dialogs.confirmPublish(),
   };
-  bar.append(info, hint);
-  const diveButton = button('dive', () => (hullNeeded(host.state) !== null && diveBlock(host.state) !== 'survey' ? host.buyHull() : host.dive()));
-  const fleetButtons = GENERATORS.map((gen) => button(`gen-${gen.id}`, () => host.buyGenerator(gen.id, 1)));
-  const researchButton = button('research', () => {
-    const next = availableResearch(host.state)[0];
-    if (next) host.buyResearch(next.id);
+
+  const overlay = createOverlay(ctx);
+  const panel = createPanel(ctx);
+  const dialogs = createDialogs(ctx, [stage, panel.element]);
+  const announcer = createAnnouncer(ctx);
+
+  stage.append(canvas, overlay.element);
+  root.append(stage, panel.element, dialogs.element);
+
+  const setReduced = liveClass(root, 'gf-reduced');
+  const setRoomy = liveClass(root, 'gf-roomy');
+  const setZone = liveAttr(stage, 'data-zone');
+
+  /** Picks the overlay arrangement that suits the play area's current size. */
+  function fitOverlays(): void {
+    const width = stage.clientWidth;
+    const height = stage.clientHeight;
+    setRoomy(width >= ROOMY_WIDTH && height >= ROOMY_HEIGHT);
+    overlay.setNoticeLimit(width >= TWO_CARDS_WIDTH && height >= TWO_CARDS_HEIGHT ? 2 : 1);
+  }
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fitOverlays).observe(stage);
+  else window.addEventListener('resize', fitOverlays);
+
+  function update(): void {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const state = host.state;
+      if (state !== lastState) {
+        // A save was imported or the game was reset: nothing remembered about the old one still holds.
+        if (lastState) panel.reset();
+        announcer.reset();
+        lastState = state;
+      }
+      setReduced(state.settings.reducedMotion);
+      setZone(String(host.viewZone));
+      const tick: Tick = { state, rate: passiveRate(state) };
+      overlay.update(tick);
+      panel.update(tick);
+      dialogs.update(tick);
+      announcer.update(state);
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  window.addEventListener('keydown', (event) => {
+    if (dialogs.handleKey(event)) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || isTextField(event.target)) return;
+    const key = event.key;
+
+    if (key.length === 1 && key >= '1' && key <= '5') {
+      const tab = TAB_IDS[Number(key) - 1];
+      if (tab) {
+        event.preventDefault();
+        panel.select(tab);
+      }
+      return;
+    }
+
+    if (key === 'm' || key === 'M') {
+      if (event.repeat) return;
+      const settings = host.state.settings;
+      const silence = settings.music || settings.sfx;
+      host.updateSettings({ music: !silence, sfx: !silence });
+      overlay.toast(silence ? 'Sound off' : 'Sound on', 'info');
+      return;
+    }
+
+    if (key === ' ' || key === 'Enter') {
+      const focused = document.activeElement;
+      const onControl = focused instanceof HTMLElement && isControl(focused);
+      // A control reached with the keyboard keeps its own Space and Enter.
+      if (onControl && focusShowsRing(focused)) return;
+      event.preventDefault();
+      // A button that merely kept focus after a mouse click must not fire again on key-up.
+      if (onControl) focused.blur();
+      if (!event.repeat && diveBlock(host.state) === null) host.dive();
+    }
   });
-  const publishButton = button('publish', () => host.publish());
-  root.append(canvas, bar);
-  const toasts: string[] = [];
+
+  fitOverlays();
+  update();
+
   return {
     canvas,
-    modalOpen: false,
-    update() {
-      const state = host.state;
-      info.textContent = `${formatNumber(state.lumens)} lumens (+${formatNumber(passiveRate(state), true)}/s) | ${depthOfStep(state.depthStep)} m | survey ${Math.round(surveyProgress(state) * 100)}% ${toasts[toasts.length - 1] ?? ''}`;
-      const zone = hullNeeded(state);
-      diveButton.textContent = diveBlock(state) === 'hull' && zone !== null ? `Hull ${formatNumber(hullCost(state, zone))}` : 'Dive';
-      diveButton.disabled = diveBlock(state) === 'survey' || diveBlock(state) === 'floor';
-      fleetButtons.forEach((element, index) => {
-        element.hidden = !generatorUnlocked(state, index);
-        element.textContent = `${(GENERATORS[index] as (typeof GENERATORS)[number]).name} x${state.generators[index] ?? 0} (${formatNumber(generatorCost(state, index))})`;
-        element.disabled = generatorCost(state, index) > state.lumens;
-      });
-      const next = availableResearch(state)[0];
-      researchButton.hidden = !next;
-      if (next) {
-        researchButton.textContent = `${next.name} (${formatNumber(next.cost)})`;
-        researchButton.disabled = next.cost > state.lumens;
-      }
-      publishButton.hidden = !canPublish(state);
-      publishButton.textContent = `Publish +${renownOnPublish(state)}`;
+    update,
+    toast: (message, kind = 'info') => overlay.toast(message, kind),
+    setHint: (text) => overlay.setHint(text),
+    showOffline: (report) => dialogs.showOffline(report),
+    showZoneIntro: (zone) => dialogs.showZoneIntro(zone),
+    showPublished: (result) => dialogs.showPublished(result),
+    showAchievement(achievement) {
+      panel.noteAchievement();
+      overlay.showAchievement(achievement);
     },
-    toast(message) {
-      toasts.push(message);
+    showDiscovery(species) {
+      panel.noteDiscovery(species);
+      overlay.showDiscovery(species);
     },
-    setHint(text) {
-      hint.textContent = text ?? '';
+    showFinale: () => dialogs.showFinale(),
+    get modalOpen() {
+      return dialogs.open;
     },
-    showOffline() {},
-    showZoneIntro() {},
-    showPublished() {},
-    showAchievement() {},
-    showDiscovery() {},
-    showFinale() {},
-    playInsets: () => ({ top: 0, bottom: 0 }),
+    playInsets() {
+      fitOverlays();
+      return overlay.insets(stage.getBoundingClientRect());
+    },
   };
 }
