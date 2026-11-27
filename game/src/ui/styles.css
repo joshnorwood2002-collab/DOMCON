@@ -2803,7 +2803,7 @@ body {
   }
 }
 
-/* Short landscape phones: tabs lose their icons and everything tightens up. */
+/* Short landscape phones: five words do not fit across the narrow panel, so tabs show their icons alone and everything tightens up. */
 @media (max-height: 479px) and (orientation: landscape) {
   .gf-tab {
     min-height: 40px;
@@ -2811,13 +2811,47 @@ body {
   }
 
   .gf-tab .gf-icon {
-    display: none;
+    width: 20px;
+    height: 20px;
+  }
+
+  /* Out of sight but still read out by screen readers. */
+  .gf-tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .gf-dot {
     top: 4px;
     left: auto;
-    right: 3px;
+    right: 6px;
+  }
+
+  .gf-view-head {
+    gap: 8px;
+  }
+
+  .gf-view-note {
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  .gf-seg {
+    grid-auto-columns: minmax(38px, auto);
+  }
+
+  .gf-seg-btn {
+    padding: 0 6px;
+  }
+
+  /* Names may take a second line here instead of being cut short. */
+  .gf-row-name {
+    white-space: normal;
+    line-height: 1.15;
   }
 
   .gf-view {
