@@ -49,6 +49,7 @@ npm ci
 npm run dev        # http://127.0.0.1:5173, rebuilds on change
 npm run check      # type-check, unit tests, build, browser tests
 npm run build      # dist/<target>/ and dist/zips/*.zip
+npm run store-assets   # remake the covers, screenshots and videos in store/
 ```
 
 Build targets: `web` (GitHub Pages or any host), `itch`, `portal` (plain zip
@@ -64,7 +65,7 @@ for a CrazyGames trial), `crazygames` (with their SDK), `gamedistribution`.
 | `game/src/platform/` | One adapter per storefront |
 | `game/scripts/` | Build, pacing fit, store images |
 | `game/e2e/` | Browser tests |
-| `game/store/` | Covers, screenshots and preview video for listings |
+| `game/store/` | Covers, screenshots and preview videos for listings |
 
 Pacing is not hand-tuned. `game/scripts/fit-surveys.ts` plays the real rules
 with a simulated player and sizes each depth's survey so the game follows a

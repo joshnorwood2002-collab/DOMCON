@@ -42,7 +42,8 @@ export interface GameConfig {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // GF_DIST lets parallel jobs (or tests) build into separate folders without tripping over each other.
-const distRoot = process.env['GF_DIST'] ? path.resolve(process.env['GF_DIST']) : path.join(root, 'dist');
+// It is read when a build starts, not when this file loads, so a caller can set it after importing.
+const distRoot = (): string => (process.env['GF_DIST'] ? path.resolve(process.env['GF_DIST']) : path.join(root, 'dist'));
 
 export async function loadConfig(): Promise<GameConfig> {
   return JSON.parse(await readFile(path.join(root, 'game.config.json'), 'utf8')) as GameConfig;
@@ -76,7 +77,7 @@ function buildOptions(target: Target, config: GameConfig, version: string, dev: 
     minify: !dev,
     sourcemap: dev ? 'inline' : false,
     legalComments: 'none',
-    outfile: path.join(distRoot, target, 'game.js'),
+    outfile: path.join(distRoot(), target, 'game.js'),
     logLevel: 'warning',
     define: {
       __PLATFORM__: JSON.stringify(target),
@@ -91,7 +92,7 @@ function buildOptions(target: Target, config: GameConfig, version: string, dev: 
 }
 
 async function writeStatic(target: Target, config: GameConfig, version: string): Promise<void> {
-  const out = path.join(distRoot, target);
+  const out = path.join(distRoot(), target);
   await mkdir(out, { recursive: true });
   const template = await readFile(path.join(root, 'index.html'), 'utf8');
   const html = template
@@ -109,12 +110,12 @@ async function writeStatic(target: Target, config: GameConfig, version: string):
 export async function buildTarget(target: Target, options: { dev?: boolean; zip?: boolean } = {}): Promise<string> {
   const config = await loadConfig();
   const version = await readVersion();
-  const out = path.join(distRoot, target);
+  const out = path.join(distRoot(), target);
   await rm(out, { recursive: true, force: true });
   await writeStatic(target, config, version);
   await esbuild.build(buildOptions(target, config, version, options.dev ?? false));
   if (options.zip) {
-    const zips = path.join(distRoot, 'zips');
+    const zips = path.join(distRoot(), 'zips');
     await mkdir(zips, { recursive: true });
     const zipPath = path.join(zips, `${config.slug}-${target}-v${version}.zip`);
     await rm(zipPath, { force: true });
@@ -189,7 +190,7 @@ async function main(): Promise<void> {
     const version = await readVersion();
     const context = await esbuild.context(buildOptions(target, config, version, true));
     await context.watch();
-    const { url } = await serveDirectory(path.join(distRoot, target), 5173);
+    const { url } = await serveDirectory(path.join(distRoot(), target), 5173);
     console.log(`Serving ${target} build at ${url} (rebuilds on change; reload the page)`);
     return;
   }

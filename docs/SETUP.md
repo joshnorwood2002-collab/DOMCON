@@ -71,9 +71,10 @@ exclusivity offer possible, which pays more.
      download has expired, press **Run workflow** on that page to make a
      fresh one.) This build has no adverts and no SDK, which is what the
      trial wants.
-   - Covers: the `cover-*.png` files in `game/store/` that match the sizes
-     asked for. There are a few designs; pick the one that looks best to you
-     at thumbnail size. Video: `preview.mp4`.
+   - Covers and videos: from `game/store/` in this repository. Give each
+     slot the file whose name matches it: `cover-1920x1080.png` (landscape),
+     `cover-800x1200.png` (portrait), `cover-800x800.png` (square),
+     `preview-landscape.mp4` and `preview-portrait.mp4`.
    - Text, category and controls: from [LISTINGS.md](LISTINGS.md).
    - If asked whether AI was used, say yes and paste the disclosure.
 4. Wait. After review the game gets a **Basic Launch**: one to three weeks in

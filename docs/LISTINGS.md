@@ -63,7 +63,8 @@ that could apply (code, graphics, sound, text):
 
 ## Images and video
 
-Generated from the real game by `npm run store-assets` (see `game/store/`):
+All of these are in `game/store/`. To download one from GitHub, open the file
+there and press the download button above the picture.
 
 | File | Use |
 |---|---|
@@ -71,8 +72,18 @@ Generated from the real game by `npm run store-assets` (see `game/store/`):
 | `cover-800x1200.png` | CrazyGames portrait cover |
 | `cover-800x800.png` | CrazyGames square cover |
 | `cover-630x500.png` | itch.io cover image |
-| `screenshot-1.png` to `screenshot-5.png` | Screenshots for any store (1280x720) |
-| `preview.mp4` | Gameplay preview video for CrazyGames |
+| `screenshot-1.png` to `screenshot-5.png` | Screenshots for any store (1280x720), one per ocean zone |
+| `preview-landscape.mp4` | CrazyGames landscape preview video (1920x1080) |
+| `preview-portrait.mp4` | CrazyGames portrait preview video (1080x1620) |
 
-CrazyGames asks that covers carry only the game's title, with no borders or
-extra text; these do.
+They follow CrazyGames' rules, which are the strictest:
+
+- Covers carry only the game's title: no borders, no other text, no logos.
+- Videos are between 15 and 20 seconds, silent, open on the cover, show real
+  play at normal speed, and have no mouse pointer or black bars.
+
+Nothing here is a mock-up. The covers are drawn by the game's own renderer.
+The screenshots and videos are the real game running, loaded with the state a
+simulated player reaches at each depth, so every number shown is one a player
+would see. `npm run store-assets` in the `game` folder remakes all of them
+after a change to the game (it needs `ffmpeg` for the videos).

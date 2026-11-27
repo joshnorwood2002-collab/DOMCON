@@ -1074,14 +1074,29 @@ export class Backdrop {
       const parallax = layer === 0 ? 0.55 : 0.9;
       g.globalAlpha = baseAlpha * (layer === 0 ? 0.42 : 0.66);
       const long = streak * (layer === 0 ? 9 : 18) * unit * ratio;
+      let dots = false;
       for (let i = start; i < start + shown; i++) {
         const o = i * 5;
         const fall = time * (this.snow[o + 2] as number) * unit - this.scroll * parallax;
         const y = fract((this.snow[o + 1] as number) + fall / h) * h;
         const x = (this.snow[o] as number) * w + Math.sin(time * 0.5 + (this.snow[o + 4] as number)) * 9 * unit;
         const size = Math.max(1, Math.round((this.snow[o + 3] as number) * ratio * Math.max(0.8, unit)));
-        g.fillRect(Math.round(x * ratio), Math.round(y * ratio), size, size + long);
+        const left = Math.round(x * ratio);
+        const top = Math.round(y * ratio);
+        if (size >= 4 && long < 1) {
+          // Big enough on this screen for its corners to show: a round speck instead of a square one.
+          if (!dots) {
+            g.beginPath();
+            dots = true;
+          }
+          const radius = size / 2;
+          g.moveTo(left + size, top + radius);
+          g.arc(left + radius, top + radius, radius, 0, TAU);
+        } else {
+          g.fillRect(left, top, size, size + long);
+        }
       }
+      if (dots) g.fill();
     }
     g.globalAlpha = 1;
   }

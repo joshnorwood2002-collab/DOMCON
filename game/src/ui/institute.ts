@@ -203,7 +203,7 @@ export function createInstituteView(ctx: UiContext): View {
       const maxed = !Number.isFinite(cost);
       const affordable = !maxed && cost <= state.renown;
       const priceText = maxed ? '' : ctx.num(cost);
-      const label = maxed ? (upgrade.maxLevel === 1 ? 'Owned' : 'Maxed') : affordable ? (level === 0 ? 'Buy' : 'Upgrade') : `Need ${ctx.num(cost - state.renown)} more`;
+      const label = maxed ? (upgrade.maxLevel === 1 ? 'Owned' : 'Maxed') : affordable ? (level === 0 ? 'Buy' : 'Upgrade') : `${ctx.num(cost - state.renown)} to go`;
       row.setLevel(levelText(upgrade, level));
       row.setLabel(label);
       row.setPrice(priceText);

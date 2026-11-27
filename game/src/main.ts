@@ -25,7 +25,7 @@ import {
   tick,
 } from './game/actions.ts';
 import { RARITIES, ZONES, type SpeciesDef } from './game/content.ts';
-import { SHOAL_SIZE, diveBlock, getModifiers, hullCost, hullNeeded, invalidateModifiers, localDay, maxAffordable, type OfflineReport } from './game/economy.ts';
+import { SHOAL_SIZE, diveBlock, getModifiers, hullCost, hullNeeded, invalidateModifiers, localDay, maxAffordable, surveyTarget, type OfflineReport } from './game/economy.ts';
 import { SAVE_KEY, backupSave, clearSaves, deserialize, exportCode, importCode, loadSave, quarantineUnreadable, saveGame, type SaveStorage } from './game/save.ts';
 import { createState, type GameState, type Settings } from './game/state.ts';
 import { Session, type SessionEvents } from './live/session.ts';
@@ -647,6 +647,7 @@ async function start(): Promise<void> {
         lumens: state.lumens,
         depthStep: state.depthStep,
         block: diveBlock(state),
+        surveyNeed: surveyTarget(state),
         population: session.population,
         shoalSize: SHOAL_SIZE,
         playSeconds: formatDuration(state.stats.playSeconds),
