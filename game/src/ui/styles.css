@@ -388,6 +388,9 @@ body {
 /* ---------------------------------------------------------------- top row */
 
 .gf-top {
+  /* Above the toasts and cards in the middle, so a crowded moment on a small screen never covers the readouts. */
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -558,6 +561,43 @@ body {
 
 .gf-roomy .gf-daily-amount {
   display: inline;
+}
+
+/* The smallest phones: the same top row with less air in it, so the depth always fits. */
+.gf-tight .gf-top {
+  gap: 5px;
+}
+
+.gf-tight .gf-wallet {
+  column-gap: 6px;
+  padding: 5px 9px 5px 7px;
+}
+
+.gf-tight .gf-star {
+  width: 18px;
+  height: 18px;
+}
+
+.gf-tight .gf-lumens {
+  font-size: 19px;
+}
+
+.gf-tight .gf-hud-main {
+  gap: 4px;
+}
+
+.gf-tight .gf-depth {
+  padding: 5px 8px;
+}
+
+.gf-tight .gf-depth-value {
+  font-size: 15px;
+}
+
+.gf-tight .gf-icon-btn,
+.gf-tight .gf-chip-btn {
+  min-width: 40px;
+  min-height: 40px;
 }
 
 /* ---------------------------------------------------------------- between the top row and the bottom bar */
@@ -1022,6 +1062,9 @@ body {
 /* ---------------------------------------------------------------- bottom bar: Sonar, survey, DIVE */
 
 .gf-dock {
+  /* Above the toasts and cards in the middle: nothing may ever cover the DIVE button. */
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: stretch;
   gap: 6px;
@@ -1381,6 +1424,19 @@ body {
 
 .gf-roomy .gf-sonar {
   width: 80px;
+}
+
+.gf-tight .gf-sonar {
+  width: 60px;
+}
+
+.gf-tight .gf-dive {
+  width: 108px;
+}
+
+.gf-tight .gf-survey {
+  padding-right: 8px;
+  padding-left: 9px;
 }
 
 .gf-roomy .gf-sonar-name {

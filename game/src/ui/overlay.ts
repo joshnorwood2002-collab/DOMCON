@@ -35,6 +35,7 @@ import type { Tick, UiContext } from './types.ts';
 
 const TOAST_MS = 3500;
 const NOTICE_MS = 4000;
+/** Toasts on screen at once; a very short play area holds one fewer. */
 const MAX_TOASTS = 3;
 /** The gap in the top row must be at least this wide (CSS pixels) before toasts are shown in it. */
 const TOP_TOAST_ROOM = 320;
@@ -48,8 +49,8 @@ export interface Overlay {
   setHint(text: string | null): void;
   showDiscovery(species: SpeciesDef): void;
   showAchievement(achievement: AchievementDef): void;
-  /** How many discovery or achievement cards may show at once on this screen. */
-  setNoticeLimit(limit: number): void;
+  /** How many toasts and how many discovery or achievement cards this size of play area can show at once. */
+  setLimits(toasts: number, notices: number): void;
   /** Pixels this layer covers at the top and bottom of a play area whose box is `stage`. */
   insets(stage: DOMRect): { top: number; bottom: number };
 }
@@ -278,6 +279,7 @@ export function createOverlay(ctx: UiContext): Overlay {
     timer: number;
   }
   const shownToasts: Toast[] = [];
+  let toastLimit = MAX_TOASTS;
   /** Toasts that are fading out; cleared at once when a new one needs the room. */
   const fading = new Set<HTMLElement>();
 
@@ -307,7 +309,7 @@ export function createOverlay(ctx: UiContext): Overlay {
     }
     for (const node of fading) node.remove();
     fading.clear();
-    while (shownToasts.length >= MAX_TOASTS) {
+    while (shownToasts.length >= toastLimit) {
       const oldest = shownToasts.shift();
       if (!oldest) break;
       window.clearTimeout(oldest.timer);
@@ -599,8 +601,9 @@ export function createOverlay(ctx: UiContext): Overlay {
     setHint,
     showDiscovery,
     showAchievement,
-    setNoticeLimit(limit) {
-      noticeLimit = Math.max(1, limit);
+    setLimits(toasts, notices) {
+      toastLimit = Math.max(1, Math.min(MAX_TOASTS, toasts));
+      noticeLimit = Math.max(1, notices);
     },
     insets(stage) {
       const topEdge = top.getBoundingClientRect().bottom;

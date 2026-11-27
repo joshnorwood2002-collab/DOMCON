@@ -19,6 +19,10 @@ const ROOMY_HEIGHT = 320;
 /** A play area at least this big has room for two discovery cards at once. */
 const TWO_CARDS_WIDTH = 560;
 const TWO_CARDS_HEIGHT = 380;
+/** A play area narrower than this (the smallest phones) gets tighter spacing along its top and bottom rows. */
+const TIGHT_WIDTH = 370;
+/** A play area shorter than this shows two toasts at once instead of three. */
+const TWO_TOASTS_HEIGHT = 300;
 
 /** True when the browser is drawing a focus ring on `node`, which means it was reached with the keyboard. */
 function focusShowsRing(node: Element): boolean {
@@ -63,6 +67,7 @@ export function createUi(root: HTMLElement, host: UiHost): Ui {
 
   const setReduced = liveClass(root, 'gf-reduced');
   const setRoomy = liveClass(root, 'gf-roomy');
+  const setTight = liveClass(root, 'gf-tight');
   const setZone = liveAttr(stage, 'data-zone');
 
   /** Picks the overlay arrangement that suits the play area's current size. */
@@ -70,7 +75,8 @@ export function createUi(root: HTMLElement, host: UiHost): Ui {
     const width = stage.clientWidth;
     const height = stage.clientHeight;
     setRoomy(width >= ROOMY_WIDTH && height >= ROOMY_HEIGHT);
-    overlay.setNoticeLimit(width >= TWO_CARDS_WIDTH && height >= TWO_CARDS_HEIGHT ? 2 : 1);
+    setTight(width < TIGHT_WIDTH);
+    overlay.setLimits(height < TWO_TOASTS_HEIGHT ? 2 : 3, width >= TWO_CARDS_WIDTH && height >= TWO_CARDS_HEIGHT ? 2 : 1);
   }
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fitOverlays).observe(stage);
   else window.addEventListener('resize', fitOverlays);
