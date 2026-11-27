@@ -9,6 +9,8 @@ import { SAVE_VERSION, createState, type GameState } from './state.ts';
 
 export const SAVE_KEY = 'glowfathom.save';
 export const BACKUP_KEY = 'glowfathom.save.backup';
+/** Where a save that could not be read is set aside, so that it is never simply overwritten. */
+export const UNREADABLE_KEY = 'glowfathom.save.unreadable';
 const EXPORT_PREFIX = 'GF1.';
 /** Largest value any counter may hold; keeps a tampered save away from Infinity and NaN. */
 const MAX_NUMBER = 1e300;
@@ -172,26 +174,88 @@ export function importCode(code: string, nowMs: number): GameState | null {
 
 export interface SaveStorage {
   get(key: string): string | null;
-  set(key: string, value: string, urgent?: boolean): void;
+  /** Returns false when the value could not be stored anywhere. */
+  set(key: string, value: string, urgent?: boolean): boolean;
   remove(key: string): void;
+  /** Every copy of a key the host can see (a portal's synced copy and the local one, say). */
+  candidates?(key: string): (string | null)[];
 }
 
-/** Loads the main save, falling back to the backup copy if the main one is damaged. */
+export interface LoadedSave {
+  state: GameState;
+  /** The exact stored text the state came from. */
+  text: string;
+  /** When that save was written, ms since epoch. */
+  savedAt: number;
+}
+
+/** When a stored save was written, or null if the text is not a valid save. */
+export function savedAt(text: string | null): number | null {
+  if (!text) return null;
+  try {
+    const envelope = JSON.parse(text) as Partial<Envelope>;
+    if (typeof envelope.s !== 'string' || typeof envelope.c !== 'number' || checksum(envelope.s) !== envelope.c) return null;
+    return typeof envelope.t === 'number' && Number.isFinite(envelope.t) ? envelope.t : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The most recently written valid save among several copies. */
+export function newestSave(texts: readonly (string | null)[], nowMs: number): LoadedSave | null {
+  let best: LoadedSave | null = null;
+  for (const text of texts) {
+    const written = savedAt(text);
+    if (text === null || written === null) continue;
+    if (best && written <= best.savedAt) continue;
+    const state = deserialize(text, nowMs);
+    if (state) best = { state, text, savedAt: written };
+  }
+  return best;
+}
+
+/**
+ * Loads the newest readable save the host can offer, falling back to the
+ * backup copy when no main copy can be read.
+ */
+export function loadSave(storage: SaveStorage, nowMs: number): LoadedSave | null {
+  const copies = storage.candidates ? storage.candidates(SAVE_KEY) : [storage.get(SAVE_KEY)];
+  return newestSave(copies, nowMs) ?? newestSave([storage.get(BACKUP_KEY)], nowMs);
+}
+
 export function loadGame(storage: SaveStorage, nowMs: number): GameState | null {
-  return deserialize(storage.get(SAVE_KEY), nowMs) ?? deserialize(storage.get(BACKUP_KEY), nowMs);
+  return loadSave(storage, nowMs)?.state ?? null;
 }
 
 let savesSinceBackup = 0;
 
-export function saveGame(storage: SaveStorage, state: GameState, nowMs: number, urgent = false): void {
+/** Writes the save and returns the exact text written, or null when the host could not store it. */
+export function saveGame(storage: SaveStorage, state: GameState, nowMs: number, urgent = false): string | null {
   const text = serialize(state, nowMs);
-  storage.set(SAVE_KEY, text, urgent);
+  const stored = storage.set(SAVE_KEY, text, urgent);
   // Refresh the backup now and then, so a write cut short by a closing tab cannot destroy both copies.
   savesSinceBackup += 1;
-  if (savesSinceBackup >= 8) {
+  if (stored && savesSinceBackup >= 8) {
     savesSinceBackup = 0;
     storage.set(BACKUP_KEY, text, false);
   }
+  return stored ? text : null;
+}
+
+/** Copies a known-good save to the backup slot. Called once at the start of every session. */
+export function backupSave(storage: SaveStorage, text: string): void {
+  storage.set(BACKUP_KEY, text, false);
+}
+
+/**
+ * Sets aside a stored save that could not be read (damaged, or written by a
+ * newer version of the game) so that starting afresh does not destroy it.
+ */
+export function quarantineUnreadable(storage: SaveStorage, nowMs: number): boolean {
+  const text = storage.get(SAVE_KEY);
+  if (!text || deserialize(text, nowMs) !== null) return false;
+  storage.set(UNREADABLE_KEY, text, true);
+  return true;
 }
 
 export function clearSaves(storage: SaveStorage): void {

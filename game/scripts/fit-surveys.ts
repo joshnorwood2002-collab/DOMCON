@@ -24,7 +24,9 @@ import { createState } from '../src/game/state.ts';
 
 /** Seconds a first-time player should spend at dive index `step` before diving again. */
 export function targetSeconds(step: number): number {
-  if (step === 0) return 40; // the first dive, after a handful of buoys
+  // The first dive is the game's first big moment. The simulated player lands every tap, a real
+  // one does not, so this is set short enough that a real first dive comes in under a minute.
+  if (step === 0) return 28;
   if (step < 20) return 12 + (step - 1) * 1.1; // the Shallows: 12s rising to 32s
   if (step < 28) return 34 + (step - 20) * 3; // upper Twilight: 34s rising to 55s
   return 62 * Math.pow(WALL_SLOPE, step - 28); // then the pace drags until publishing is the better move

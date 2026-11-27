@@ -275,7 +275,7 @@ test('publishing banks renown and resets only what belongs to the expedition', (
   assert.deepEqual(state.research, {});
   assert.equal(state.stats.runSeconds, 0);
   assert.equal(state.stats.maxStepThisRun, 0);
-  assert.equal(sonarActive(state), false);
+  assert.equal(sonarActive(state), true, 'a running Sonar Burst carries on; publishing must not reset its timers');
   assert.deepEqual(state.generators, GENERATORS.map((_, index) => (index === 0 ? 1 : 0)), 'one buoy is left so the next expedition can start');
   assert.equal(getModifiers(state).tapMult, 1, 'research effects are gone');
   // Kept:
@@ -379,4 +379,58 @@ test('the daily gift pays once a day', () => {
   assert.equal(state.lumens, gift.lumens);
   assert.equal(claimDaily(state, 20_000), null);
   assert.equal(claimDaily(state, 20_001)!.streak, 2);
+});
+
+test('a long step pays a boost only for the time it had left', () => {
+  const state = createState(1);
+  state.generators[0] = 10;
+  const base = passiveRate(state, false);
+  state.sonarUntil = state.clock + 10;
+  tick(state, 3600);
+  // Ten boosted seconds (x2), then 3,590 ordinary ones: not 3,600 boosted seconds.
+  const expected = base * (10 * 2 + 3590);
+  assert.ok(Math.abs(state.lumens - expected) < expected * 1e-9, `earned ${state.lumens}, expected ${expected}`);
+  assert.ok(Math.abs(state.clock - 3600) < 1e-6);
+  assert.equal(state.stats.playSeconds, 3600);
+
+  const both = createState(1);
+  both.generators[0] = 10;
+  both.research['shoal3'] = true;
+  invalidateModifiers(both);
+  both.sonarUntil = 5;
+  both.frenzyUntil = 2;
+  tick(both, 100);
+  // 2 s at x6 (both), 3 s at x2 (sonar only), 95 s plain.
+  const expectedBoth = base * (2 * 6 + 3 * 2 + 95);
+  assert.ok(Math.abs(both.lumens - expectedBoth) < expectedBoth * 1e-9, `earned ${both.lumens}, expected ${expectedBoth}`);
+});
+
+test('publishing does not recharge Sonar', () => {
+  const state = at(PRESTIGE_MIN_STEP + 2);
+  state.maxStepEver = Math.max(state.maxStepEver, SONAR_UNLOCK_STEP);
+  assert.equal(startSonar(state, { cooldown: true }), true);
+  state.clock += SONAR_SECONDS + 1;
+  assert.equal(sonarReady(state), false);
+  publish(state);
+  assert.equal(sonarReady(state), false, 'still recharging after publishing');
+});
+
+test('nonsense balances and absurd upgrade levels cannot hang or break the numbers', () => {
+  const state = createState(1);
+  for (const lumens of [Number.POSITIVE_INFINITY, Number.NaN, -5, 1e308]) {
+    state.lumens = lumens;
+    const started = Date.now();
+    const quantity = buyGenerator(state, 0, 1e9);
+    assert.ok(Date.now() - started < 1000, 'returns promptly');
+    assert.ok(Number.isFinite(quantity) && quantity >= 0);
+  }
+  const wild = createState(1);
+  wild.institute['grant'] = 100_000;
+  wild.institute['patron'] = 100_000;
+  wild.generators[0] = 10;
+  invalidateModifiers(wild);
+  assert.ok(Number.isFinite(getModifiers(wild).globalMult));
+  assert.ok(Number.isFinite(getModifiers(wild).tapMult));
+  assert.ok(Number.isFinite(tapValue(wild)) && tapValue(wild) > 0);
+  assert.ok(Number.isFinite(passiveRate(wild)));
 });

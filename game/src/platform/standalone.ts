@@ -16,9 +16,8 @@ export function createStandalonePlatform(id: 'web' | 'itch' | 'portal'): Platfor
     showInterstitial: () => Promise.resolve(NO_ADS),
     showRewarded: () => Promise.resolve(NO_ADS),
     storageGet: (key) => safeLocalStorage.get(key),
-    storageSet: (key, value) => {
-      safeLocalStorage.set(key, value);
-    },
+    storageSet: (key, value) => safeLocalStorage.set(key, value),
+    storageCandidates: (key) => [safeLocalStorage.get(key)],
     storageRemove: (key) => safeLocalStorage.remove(key),
   };
 }

@@ -15,6 +15,14 @@ export interface PlatformHooks {
   setPaused(paused: boolean): void;
   /** The host needs audio muted (an ad is playing, or the player muted from the host's own controls). */
   setMuted(muted: boolean): void;
+  /**
+   * The host's own storage has only now become readable (a portal SDK that
+   * finished starting after the game had already begun). The game should check
+   * whether a better save is waiting there before it writes anything.
+   */
+  storageReady?(): void;
+  /** A rewarded advert that had been given up on was watched to the end after all. */
+  lateReward?(): void;
 }
 
 export interface Platform {
@@ -38,8 +46,13 @@ export interface Platform {
   showRewarded(): Promise<AdResult>;
   /** Key/value storage. Portals that sync saves to player accounts are used when present. */
   storageGet(key: string): string | null;
-  /** `urgent` bypasses write throttling; use it when the page is about to be hidden. */
-  storageSet(key: string, value: string, urgent?: boolean): void;
+  /**
+   * `urgent` bypasses write throttling; use it when the page is about to be hidden.
+   * Returns false when the value could not be stored anywhere.
+   */
+  storageSet(key: string, value: string, urgent?: boolean): boolean;
+  /** Every copy of a key this host can see, in no particular order. */
+  storageCandidates(key: string): (string | null)[];
   storageRemove(key: string): void;
 }
 

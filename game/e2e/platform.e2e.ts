@@ -126,8 +126,10 @@ test('CrazyGames build: SDK lifecycle, rewarded adverts, interstitials and saves
   await page.waitForTimeout(400);
   assert.ok((await game<number>(page, 'g.state.clock')) > clockBefore, 'the game keeps running');
 
-  // Entering a new zone is a natural break: celebrate, and show an interstitial once enough time has been played.
+  // Entering a new zone is a natural break: celebrate, and show an interstitial once enough time has been played
+  // in this visit (adverts are held back for the first two minutes of every visit).
   await setAdMode(page, 'finish');
+  await game(page, '(g.advance(130), true)');
   await game(page, `(() => { const s = g.state; s.depthStep = 19; s.maxStepEver = 19; s.stats.maxStepThisRun = 19; s.hullZone = 1; s.survey = 1e30; s.stats.playSeconds = 5000; g.host.dive(); return true; })()`);
   await page.waitForTimeout(250);
   const afterZone = await calls(page);

@@ -11,6 +11,7 @@ function memoryStorage(): SaveStorage & { data: Map<string, string> } {
     get: (key) => data.get(key) ?? null,
     set: (key, value) => {
       data.set(key, value);
+      return true;
     },
     remove: (key) => {
       data.delete(key);

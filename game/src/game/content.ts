@@ -212,8 +212,8 @@ export interface InstituteDef {
 }
 
 export const INSTITUTE: readonly InstituteDef[] = [
-  { id: 'grant', name: 'Grant Funding', description: 'All lumens income doubles with every level.', maxLevel: 999, baseCost: 2, costGrowth: 1.8, effect: { kind: 'globalMult', value: 2 } },
-  { id: 'patron', name: 'Deep Patron', description: 'Your scans are worth x2.5 per level.', maxLevel: 999, baseCost: 1, costGrowth: 2.4, effect: { kind: 'tapMult', value: 2.5 } },
+  { id: 'grant', name: 'Grant Funding', description: 'All lumens income doubles with every level.', maxLevel: 200, baseCost: 2, costGrowth: 1.8, effect: { kind: 'globalMult', value: 2 } },
+  { id: 'patron', name: 'Deep Patron', description: 'Your scans are worth x2.5 per level.', maxLevel: 200, baseCost: 1, costGrowth: 2.4, effect: { kind: 'tapMult', value: 2.5 } },
   { id: 'crew', name: 'Veteran Crew', description: 'Depth surveys need 12% fewer lumens per level.', maxLevel: 12, baseCost: 2, costGrowth: 2.1, effect: { kind: 'diveDiscount', value: 0.88 } },
   { id: 'seed', name: 'Seed Fleet', description: 'Start every expedition with 5 more Glow Buoys.', maxLevel: 6, baseCost: 1, costGrowth: 2.6, effect: { kind: 'seedBuoys', value: 5 } },
   { id: 'night', name: 'Night Shift', description: 'Offline time counts for 2 more hours and 10% more income.', maxLevel: 5, baseCost: 3, costGrowth: 3, effect: { kind: 'offlineHours', value: 2 } },

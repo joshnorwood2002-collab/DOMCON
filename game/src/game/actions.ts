@@ -71,11 +71,29 @@ function spend(state: GameState, amount: number): boolean {
 
 // ---------------------------------------------------------------- time
 
-/** Advances the simulation by `dt` seconds of open-game play. */
+/**
+ * Advances the simulation by `dt` seconds of open-game play.
+ * A long step (a stalled frame, a throttled tab) is split wherever a boost
+ * runs out, so a boost with seconds left is never paid for the whole step.
+ */
 export function tick(state: GameState, dt: number): void {
-  if (!(dt > 0)) return;
-  earn(state, passiveRate(state) * dt);
-  state.clock += dt;
+  if (!(dt > 0) || !Number.isFinite(dt)) return;
+  let remaining = dt;
+  // At most one split per boost, plus the final stretch.
+  for (let guard = 0; guard < 4 && remaining > 0; guard++) {
+    let step = remaining;
+    for (const until of [state.sonarUntil, state.frenzyUntil]) {
+      const left = until - state.clock;
+      if (left > 1e-9 && left < step) step = left;
+    }
+    earn(state, passiveRate(state) * step);
+    state.clock += step;
+    remaining -= step;
+    // Step exactly onto a boost's end so the next stretch sees it as over.
+    for (const until of [state.sonarUntil, state.frenzyUntil]) {
+      if (Math.abs(until - state.clock) < 1e-9) state.clock = until;
+    }
+  }
   state.stats.playSeconds += dt;
   state.stats.runSeconds += dt;
 }
@@ -268,8 +286,8 @@ export function resetExpedition(state: GameState): void {
   state.survey = 0;
   state.hullZone = 0;
   state.research = {};
-  state.sonarUntil = 0;
-  state.sonarReadyAt = 0;
+  // Sonar keeps its timers: publishing must not hand out a fresh burst, or publishing
+  // every minute would keep the boost running almost permanently.
   state.frenzyUntil = 0;
   state.stats.runSeconds = 0;
   state.stats.maxStepThisRun = 0;

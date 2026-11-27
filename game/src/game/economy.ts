@@ -209,6 +209,9 @@ function applyEffect(mods: Modifiers, effect: Effect, levels: number): void {
   }
 }
 
+/** Far beyond anything ordinary play can reach, and far inside what a double can hold. */
+const MAX_MULTIPLIER = 1e90;
+
 const modifierCache = new WeakMap<GameState, Modifiers>();
 
 /** Call after research or institute purchases, and after publishing. */
@@ -224,9 +227,12 @@ export function getModifiers(state: GameState): Modifiers {
     if (state.research[research.id]) applyEffect(mods, research.effect, 1);
   }
   for (const upgrade of INSTITUTE) {
-    const level = state.institute[upgrade.id] ?? 0;
+    const level = Math.min(upgrade.maxLevel, state.institute[upgrade.id] ?? 0);
     if (level > 0) applyEffect(mods, upgrade.effect, level);
   }
+  // Keep every multiplier finite whatever a save claims, so no number can become Infinity or NaN.
+  mods.tapMult = Math.min(mods.tapMult, MAX_MULTIPLIER);
+  mods.globalMult = Math.min(mods.globalMult, MAX_MULTIPLIER);
   modifierCache.set(state, mods);
   return mods;
 }
@@ -520,13 +526,15 @@ export function maxAffordable(state: GameState, gen: number): number {
   if (!def) return 0;
   const owned = state.generators[gen] ?? 0;
   const first = def.baseCost * Math.pow(GENERATOR_COST_GROWTH, owned) * getModifiers(state).generatorDiscount;
-  if (state.lumens < first) return 0;
+  if (!Number.isFinite(state.lumens) || !Number.isFinite(first) || !(first > 0) || state.lumens < first) return 0;
   const estimate = Math.floor(Math.log((state.lumens * (GENERATOR_COST_GROWTH - 1)) / first + 1) / Math.log(GENERATOR_COST_GROWTH));
+  if (!Number.isFinite(estimate)) return 0;
   let quantity = Math.max(0, estimate);
   // The closed form can be off by one either way because prices are rounded up.
-  while (quantity > 0 && generatorCost(state, gen, quantity) > state.lumens) quantity--;
-  while (generatorCost(state, gen, quantity + 1) <= state.lumens) quantity++;
-  return quantity;
+  // The corrections are bounded so that no input can keep them looping.
+  for (let i = 0; i < 8 && quantity > 0 && generatorCost(state, gen, quantity) > state.lumens; i++) quantity--;
+  for (let i = 0; i < 8 && generatorCost(state, gen, quantity + 1) <= state.lumens; i++) quantity++;
+  return generatorCost(state, gen, quantity) <= state.lumens ? quantity : 0;
 }
 
 // ---------------------------------------------------------------- research and institute

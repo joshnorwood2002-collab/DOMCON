@@ -16,7 +16,9 @@ interface GdSdk {
 
 const SDK_URL = 'https://html5.api.gamedistribution.com/main.min.js';
 /** The SDK can leave a showAd() promise pending forever when no ad loads. */
-const NO_IMPRESSION_TIMEOUT_MS = 6_000;
+const NO_IMPRESSION_TIMEOUT_MS = 15_000;
+/** If the SDK pauses the game and never resumes it, resume anyway after this long. */
+const PAUSE_WATCHDOG_MS = 120_000;
 const AD_WATCHDOG_MS = 90_000;
 const READY_TIMEOUT_MS = 8_000;
 
@@ -29,9 +31,23 @@ export function createGameDistributionPlatform(gameId: string): Platform {
 
   const sdk = (): GdSdk | null => (window as unknown as { gdsdk?: GdSdk }).gdsdk ?? null;
 
+  let pauseWatchdog: ReturnType<typeof setTimeout> | null = null;
+  /** True between giving up on a rewarded advert and the SDK showing it after all. */
+  let rewardAbandoned = false;
+
   function release(): void {
+    if (pauseWatchdog) clearTimeout(pauseWatchdog);
+    pauseWatchdog = null;
     hooks?.setPaused(false);
     hooks?.setMuted(false);
+  }
+
+  function hold(): void {
+    hooks?.setPaused(true);
+    hooks?.setMuted(true);
+    // An advert can start late and the SDK does not always say when it has ended.
+    if (pauseWatchdog) clearTimeout(pauseWatchdog);
+    pauseWatchdog = setTimeout(release, PAUSE_WATCHDOG_MS);
   }
 
   async function show(kind: 'interstitial' | 'rewarded'): Promise<AdResult> {
@@ -61,11 +77,14 @@ export function createGameDistributionPlatform(gameId: string): Platform {
           (error: unknown) => settle({ completed: false, failure: /too soon/i.test(String(error)) ? 'cooldown' : 'error' }),
         );
       });
+      // A rewarded advert we gave up on may still appear; if it is then watched, the reward is owed.
+      rewardAbandoned = kind === 'rewarded' && !outcome.completed && !impression;
       return outcome;
     } finally {
       adInFlight = false;
       // The SDK is meant to pair every pause with a resume, but does not always.
-      release();
+      // If an advert is on screen right now, leave the pause to its own events and watchdog.
+      if (!impression || !pauseWatchdog) release();
     }
   }
 
@@ -92,14 +111,17 @@ export function createGameDistributionPlatform(gameId: string): Platform {
                 done();
                 break;
               case 'SDK_GAME_PAUSE':
-                hooks?.setPaused(true);
-                hooks?.setMuted(true);
+                hold();
                 break;
               case 'SDK_GAME_START':
                 release();
                 break;
               case 'SDK_REWARDED_WATCH_COMPLETE':
                 rewardEarned = true;
+                if (rewardAbandoned) {
+                  rewardAbandoned = false;
+                  hooks?.lateReward?.();
+                }
                 break;
               case 'IMPRESSION':
                 impression = true;
@@ -124,9 +146,8 @@ export function createGameDistributionPlatform(gameId: string): Platform {
     showInterstitial: () => show('interstitial'),
     showRewarded: () => show('rewarded'),
     storageGet: (key) => safeLocalStorage.get(key),
-    storageSet: (key, value) => {
-      safeLocalStorage.set(key, value);
-    },
+    storageSet: (key, value) => safeLocalStorage.set(key, value),
+    storageCandidates: (key) => [safeLocalStorage.get(key)],
     storageRemove: (key) => safeLocalStorage.remove(key),
   };
 }

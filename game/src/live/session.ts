@@ -52,6 +52,8 @@ interface Creature {
   /** True once told to leave (zone change or dive): fades out without a reward. */
   leaving: boolean;
   targetedFor: number;
+  /** True once the player has hit it: the fleet then leaves it alone, so the reward stays the player's. */
+  touched: boolean;
 }
 
 interface Drone {
@@ -202,9 +204,9 @@ export class Session {
   /** Call when the expedition restarts or a save is loaded. */
   reset(): void {
     this.viewZone = currentZone(this.getState());
+    this.endShoal();
     this.creatures = [];
     this.streak = 0;
-    this.shoalActive = false;
     this.autoCarry = 0;
     this.populate();
   }
@@ -214,7 +216,22 @@ export class Session {
       creature.leaving = true;
       creature.fleeing = true;
     }
+    this.endShoal();
+  }
+
+  /** Ends a shoal in progress and books the next one, however it ended. */
+  private endShoal(): void {
+    if (!this.shoalActive) return;
     this.shoalActive = false;
+    for (const creature of this.creatures) {
+      if (creature.kind === 'shoal') {
+        creature.fleeing = true;
+        creature.leaving = true;
+      }
+    }
+    // Without this, leaving the zone mid-shoal would let the next one start at once.
+    scheduleNextShoal(this.getState(), this.rng());
+    this.events.shoalEnd(this.shoalCaught, SHOAL_SIZE);
   }
 
   // ---------------------------------------------------------------- spawning
@@ -271,6 +288,7 @@ export class Session {
       radius: Math.max(30, 34 * this.unit * Math.pow(size, 0.85)),
       leaving: false,
       targetedFor: 0,
+      touched: false,
     };
     this.creatures.push(creature);
     if (species.rarity === 'legendary') {
@@ -312,6 +330,7 @@ export class Session {
       radius: Math.max(34, 40 * this.unit),
       leaving: false,
       targetedFor: 0,
+      touched: false,
     };
     this.creatures.push(creature);
   }
@@ -381,17 +400,7 @@ export class Session {
       this.shoalNextSpawn += SHOAL_SPAWN_WINDOW / SHOAL_SIZE;
     }
     const remaining = this.creatures.some((creature) => creature.kind === 'shoal' && !creature.fleeing);
-    if (this.time >= this.shoalEndsAt || (this.shoalSpawned >= SHOAL_SIZE && !remaining)) {
-      this.shoalActive = false;
-      for (const creature of this.creatures) {
-        if (creature.kind === 'shoal') {
-          creature.fleeing = true;
-          creature.leaving = true;
-        }
-      }
-      scheduleNextShoal(state, this.rng());
-      this.events.shoalEnd(this.shoalCaught, SHOAL_SIZE);
-    }
+    if (this.time >= this.shoalEndsAt || (this.shoalSpawned >= SHOAL_SIZE && !remaining)) this.endShoal();
   }
 
   private updateFleet(state: GameState, dt: number): void {
@@ -434,7 +443,14 @@ export class Session {
       this.autoCarry -= 1;
       // The fleet only studies species the player has already identified.
       const known = this.creatures.filter(
-        (creature) => creature.kind === 'normal' && !creature.fleeing && creature.alpha > 0.6 && (state.codex[creature.species.id] ?? 0) > 0 && creature.x > 20 && creature.x < this.width - 20,
+        (creature) =>
+          creature.kind === 'normal' &&
+          !creature.fleeing &&
+          !creature.touched &&
+          creature.alpha > 0.6 &&
+          (state.codex[creature.species.id] ?? 0) > 0 &&
+          creature.x > 20 &&
+          creature.x < this.width - 20,
       );
       const target = known.find((creature) => creature.targeted) ?? (known.length > 0 ? pick(this.rng, known) : null);
       if (!target) continue;
@@ -489,6 +505,7 @@ export class Session {
     registerTap(state, this.streak);
     target.tapsLeft -= 1;
     target.hitFlash = 1;
+    target.touched = true;
     if (target.tapsLeft > 0) {
       this.events.hit(target, this.streak);
       return true;

@@ -217,3 +217,52 @@ test('the scene reports the sea floor once the sub is there', () => {
   assert.equal(scene.depthMetres, 10900);
   assert.equal(scene.zoneProgress, 1);
 });
+
+test('leaving the zone in the middle of a shoal ends it instead of banking another', () => {
+  const state = createState(1);
+  state.depthStep = 20;
+  state.maxStepEver = 20;
+  state.hullZone = 1;
+  state.clock = 500;
+  state.nextShoalAt = 400;
+  const { session, log } = harness(state);
+  run(session, 0.5);
+  assert.equal(log.shoalStarts, 1);
+  // Flip to the shallows and back, over and over, as fast as the interface allows.
+  for (let flip = 0; flip < 12; flip++) {
+    session.setViewZone(0);
+    run(session, 0.3);
+    session.setViewZone(1);
+    run(session, 2);
+  }
+  assert.equal(log.shoalStarts, 1, 'no new shoal can be conjured by switching zones');
+  assert.equal(log.shoalEnds.length, 1);
+  assert.ok(state.nextShoalAt > state.clock, 'the next shoal is properly in the future');
+});
+
+test('the fleet leaves alone any creature the player has started scanning', () => {
+  const state = createState(1);
+  state.generators[1] = 6;
+  state.research['auto1'] = true;
+  state.research['auto2'] = true;
+  state.research['auto3'] = true;
+  state.research['auto4'] = true;
+  invalidateModifiers(state);
+  for (const id of Array.from({ length: 9 }, (_, index) => `z0s${index}`)) state.codex[id] = 1;
+  const { session, log } = harness(state, 11);
+  let checked = 0;
+  for (let elapsed = 0; elapsed < 240 && checked < 6; elapsed += 0.1) {
+    session.update(0.1);
+    const scene = session.scene();
+    const target = scene.creatures.find((creature) => creature.kind === 'normal' && !creature.fleeing && creature.tapsTotal > 1 && creature.tapsLeft === creature.tapsTotal && creature.alpha > 0.7 && creature.x > 60 && creature.x < scene.width - 60);
+    if (!target) continue;
+    const id = target.id;
+    assert.equal(session.tap(target.x, target.y), true);
+    // Give the fleet plenty of time to finish it off, if it were allowed to.
+    for (let wait = 0; wait < 6; wait += 0.1) session.update(0.1);
+    assert.ok(!log.scans.some((scan) => scan.byFleet && scan.creature.id === id), 'the fleet did not take the scan');
+    checked += 1;
+  }
+  assert.ok(checked >= 3, `only found ${checked} multi-tap creatures to test`);
+  assert.ok(log.scans.some((scan) => scan.byFleet), 'the fleet is still scanning other creatures');
+});

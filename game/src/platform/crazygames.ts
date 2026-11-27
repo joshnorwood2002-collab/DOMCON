@@ -96,7 +96,7 @@ export function createCrazyGamesPlatform(): Platform {
     });
   }
 
-  function writeNow(key: string, value: string): void {
+  function writeNow(key: string, value: string): boolean {
     const pending = pendingWrite.get(key);
     if (pending) {
       clearTimeout(pending.timer);
@@ -104,9 +104,19 @@ export function createCrazyGamesPlatform(): Platform {
     }
     lastWrite.set(key, Date.now());
     // Always keep a local copy: it is the fallback if the SDK is blocked next time.
-    safeLocalStorage.set(key, value);
+    const local = safeLocalStorage.set(key, value);
     const activeSdk = sdk;
     if (activeSdk) safely(() => activeSdk.data.setItem(key, value));
+    return local || activeSdk !== null;
+  }
+
+  function syncedCopy(key: string): string | null {
+    try {
+      const synced = sdk?.data.getItem(key);
+      return typeof synced === 'string' && synced.length > 0 ? synced : null;
+    } catch {
+      return null;
+    }
   }
 
   return {
@@ -123,6 +133,8 @@ export function createCrazyGamesPlatform(): Platform {
         sdk = candidate;
         safely(() => candidate.game.addSettingsChangeListener?.(syncMute));
         syncMute();
+        // If the SDK was slow, the game may already be running on local data: let it look at the synced copy.
+        hooks.storageReady?.();
       } catch {
         sdk = null;
       }
@@ -137,32 +149,28 @@ export function createCrazyGamesPlatform(): Platform {
     storageGet(key) {
       const pending = pendingWrite.get(key);
       if (pending) return pending.value;
-      try {
-        const synced = sdk?.data.getItem(key);
-        if (typeof synced === 'string' && synced.length > 0) return synced;
-      } catch {
-        // Fall through to the local copy.
-      }
-      return safeLocalStorage.get(key);
+      // The local copy is written on every save, so it is never older than the synced one from this device.
+      return safeLocalStorage.get(key) ?? syncedCopy(key);
+    },
+    storageCandidates(key) {
+      return [pendingWrite.get(key)?.value ?? null, syncedCopy(key), safeLocalStorage.get(key)];
     },
     storageSet(key, value, urgent = false) {
       const elapsed = Date.now() - (lastWrite.get(key) ?? 0);
-      if (urgent || elapsed >= WRITE_INTERVAL_MS) {
-        writeNow(key, value);
-        return;
-      }
+      if (urgent || elapsed >= WRITE_INTERVAL_MS) return writeNow(key, value);
       // Keep the freshest value locally right away; sync it to the host later.
-      safeLocalStorage.set(key, value);
+      const local = safeLocalStorage.set(key, value);
       const existing = pendingWrite.get(key);
       if (existing) {
         existing.value = value;
-        return;
+        return true;
       }
       const timer = setTimeout(() => {
         const queued = pendingWrite.get(key);
         if (queued) writeNow(key, queued.value);
       }, WRITE_INTERVAL_MS - elapsed);
       pendingWrite.set(key, { value, timer });
+      return local || sdk !== null;
     },
     storageRemove(key) {
       const pending = pendingWrite.get(key);

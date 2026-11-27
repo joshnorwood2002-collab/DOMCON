@@ -26,7 +26,7 @@ import {
 } from './game/actions.ts';
 import { RARITIES, ZONES, type SpeciesDef } from './game/content.ts';
 import { SHOAL_SIZE, diveBlock, getModifiers, hullCost, hullNeeded, invalidateModifiers, localDay, maxAffordable, type OfflineReport } from './game/economy.ts';
-import { clearSaves, exportCode, importCode, loadGame, saveGame, type SaveStorage } from './game/save.ts';
+import { SAVE_KEY, backupSave, clearSaves, deserialize, exportCode, importCode, loadSave, quarantineUnreadable, saveGame, type SaveStorage } from './game/save.ts';
 import { createState, type GameState, type Settings } from './game/state.ts';
 import { Session, type SessionEvents } from './live/session.ts';
 import { createPlatform, type Platform } from './platform/index.ts';
@@ -39,7 +39,11 @@ const OFFLINE_GAP_SECONDS = 60;
 /** Adverts at natural breaks: never in the opening minutes, and never close together. */
 const FIRST_INTERSTITIAL_AFTER_SECONDS = 240;
 const INTERSTITIAL_SPACING_SECONDS = 210;
-const PLATFORM_INIT_TIMEOUT_MS = 4000;
+/** Nor in the first minutes of a visit, however long the player has played before. */
+const INTERSTITIAL_MIN_SESSION_SECONDS = 120;
+/** A rewarded advert that turns up late is still honoured for this long. */
+const LATE_REWARD_WINDOW_MS = 120_000;
+const PLATFORM_INIT_TIMEOUT_MS = 8000;
 
 const HINTS: readonly string[] = [
   'Tap the glowing creatures to scan them',
@@ -62,6 +66,10 @@ async function start(): Promise<void> {
   let hostMuted = false;
   let audio: AudioEngine | null = null;
   const syncAudioSuspend = (): void => audio?.setSuspended(hostMuted || document.hidden);
+  // Set once the game is on screen; platform callbacks that arrive earlier need no handling.
+  let booted = false;
+  let onStorageReady: () => void = () => {};
+  let onLateReward: () => void = () => {};
   await withTimeout(
     platform.init({
       setPaused: (value) => {
@@ -71,6 +79,10 @@ async function start(): Promise<void> {
         hostMuted = value;
         syncAudioSuspend();
       },
+      storageReady: () => {
+        if (booted) onStorageReady();
+      },
+      lateReward: () => onLateReward(),
     }),
     PLATFORM_INIT_TIMEOUT_MS,
   );
@@ -81,51 +93,102 @@ async function start(): Promise<void> {
     get: (key) => platform.storageGet(key),
     set: (key, value, urgent) => platform.storageSet(key, value, urgent),
     remove: (key) => platform.storageRemove(key),
+    candidates: (key) => platform.storageCandidates(key),
   };
 
-  const loaded = loadGame(storage, Date.now());
-  let state: GameState = loaded ?? createState(1 + Math.floor(Math.random() * 2_000_000_000), Date.now());
+  const loaded = loadSave(storage, Date.now());
+  // A stored save that cannot be read (damaged, or from a newer version) is set aside, never overwritten.
+  const unreadableSetAside = !loaded && quarantineUnreadable(storage, Date.now());
+  let state: GameState = loaded?.state ?? createState(1 + Math.floor(Math.random() * 2_000_000_000), Date.now());
   if (!loaded && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) state.settings.reducedMotion = true;
   let pendingOffline: OfflineReport | null = loaded ? applyOffline(state, Date.now()) : null;
   let offlineDoubled = false;
+  // The exact save text this page last read or wrote. If storage ever holds something else,
+  // another tab (or a newer load of this page) has saved since, and its progress must not be overwritten.
+  let knownSaveText: string | null = loaded?.text ?? null;
+  if (loaded) backupSave(storage, loaded.text);
 
   const fmt = (value: number): string => formatNumber(value, false, state.settings.scientific);
   const today = (): number => localDay(Date.now(), new Date().getTimezoneOffset());
-  const save = (urgent = false): void => saveGame(storage, state, Date.now(), urgent);
+
+  let warnedUnsaved = false;
+  /** Takes over a save written elsewhere since this page last saved. Returns true when it did. */
+  function adoptForeignSave(): boolean {
+    const stored = storage.get(SAVE_KEY);
+    if (stored === null || stored === knownSaveText) return false;
+    const other = deserialize(stored, Date.now());
+    knownSaveText = stored;
+    if (!other) return false;
+    adoptState(other);
+    ui.toast('Picked up newer progress saved from another tab', 'info');
+    return true;
+  }
+
+  function save(urgent = false): void {
+    if (booted && adoptForeignSave()) return;
+    const written = saveGame(storage, state, Date.now(), urgent);
+    if (written !== null) {
+      knownSaveText = written;
+    } else if (booted && !warnedUnsaved) {
+      warnedUnsaved = true;
+      ui.toast("Progress cannot be saved here: this browser's storage is full or blocked. Use Settings > Export save to keep it.", 'warn');
+    }
+  }
 
   // ---------------------------------------------------------------- adverts
   let lastInterstitialAt = -Infinity;
   let adBusy = false;
 
+  let playing = false;
+  /** Seconds played in this visit, as opposed to the lifetime total in the save. */
+  let sessionSeconds = 0;
+
   async function maybeInterstitial(): Promise<void> {
     if (!platform.hasAds || adBusy) return;
+    // Never before the player has touched the game in this visit, nor in its first minutes.
+    if (!playing || sessionSeconds < INTERSTITIAL_MIN_SESSION_SECONDS) return;
     if (state.stats.playSeconds < FIRST_INTERSTITIAL_AFTER_SECONDS) return;
-    if (state.stats.playSeconds - lastInterstitialAt < INTERSTITIAL_SPACING_SECONDS) return;
+    if (sessionSeconds - lastInterstitialAt < INTERSTITIAL_SPACING_SECONDS) return;
     adBusy = true;
-    lastInterstitialAt = state.stats.playSeconds;
+    lastInterstitialAt = sessionSeconds;
     platform.gameplayStop();
     try {
       await platform.showInterstitial();
     } finally {
       adBusy = false;
       paused = false;
-      platform.gameplayStart();
+      if (playing) platform.gameplayStart();
     }
   }
+
+  let lateReward: (() => void) | null = null;
+  let lateRewardUntil = 0;
+  onLateReward = () => {
+    const reward = lateReward;
+    lateReward = null;
+    if (reward && Date.now() < lateRewardUntil) reward();
+  };
 
   /** Runs `reward` once a rewarded advert has been watched to the end. Returns whether it ran. */
   async function afterRewardedAd(reward: () => void): Promise<boolean> {
     if (!platform.hasAds || adBusy) return false;
     adBusy = true;
+    lateReward = null;
     platform.gameplayStop();
     try {
       const result = await platform.showRewarded();
-      if (result.completed) reward();
+      if (result.completed) {
+        reward();
+      } else {
+        // Some portals show the advert after we have stopped waiting; honour it if it is then watched.
+        lateReward = reward;
+        lateRewardUntil = Date.now() + LATE_REWARD_WINDOW_MS;
+      }
       return result.completed;
     } finally {
       adBusy = false;
       paused = false;
-      platform.gameplayStart();
+      if (playing) platform.gameplayStart();
     }
   }
 
@@ -224,9 +287,10 @@ async function start(): Promise<void> {
     }
   }
 
-  function replaceState(next: GameState): void {
+  /** Swaps in a different game state (an import, a reset, or progress saved elsewhere) without saving. */
+  function adoptState(next: GameState): void {
     state = next;
-    // An imported save starts its clock now: time since it was exported is not paid as offline income.
+    // The new state starts its clock now: time since it was written is not paid as offline income.
     state.lastSeen = Date.now();
     invalidateModifiers(state);
     pendingOffline = null;
@@ -235,9 +299,32 @@ async function start(): Promise<void> {
     audio?.setMusicEnabled(state.settings.music);
     audio?.setSfxEnabled(state.settings.sfx);
     renderer.setReducedMotion(state.settings.reducedMotion);
-    save(true);
     ui.update();
   }
+
+  function replaceState(next: GameState): void {
+    adoptState(next);
+    // The player chose this state: it replaces whatever is stored.
+    const written = saveGame(storage, state, Date.now(), true);
+    if (written !== null) knownSaveText = written;
+  }
+
+  // A portal SDK that finished starting late may hold a save that is further along than the one in use.
+  onStorageReady = () => {
+    // The game in use here may be a new one started seconds ago, so the copies are compared
+    // by how much has been played, not by which was written last.
+    let best: GameState | null = null;
+    for (const text of storage.candidates?.(SAVE_KEY) ?? []) {
+      const candidate = text === null ? null : deserialize(text, Date.now());
+      if (candidate && candidate.stats.playSeconds > (best ?? state).stats.playSeconds) best = candidate;
+    }
+    if (!best) return;
+    adoptState(best);
+    // Write it straight back so every copy agrees and the next save has nothing to argue with.
+    const written = saveGame(storage, state, Date.now(), true);
+    if (written !== null) knownSaveText = written;
+    ui.toast('Loaded your saved game', 'good');
+  };
 
   const host: UiHost = {
     get state() {
@@ -398,7 +485,6 @@ async function start(): Promise<void> {
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fitCanvas).observe(ui.canvas);
   window.addEventListener('resize', fitCanvas);
 
-  let playing = false;
   function firstGesture(): void {
     audio?.unlock();
     if (!playing) {
@@ -419,13 +505,17 @@ async function start(): Promise<void> {
   ui.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
   platform.loadingStop();
+  booted = true;
   document.documentElement.classList.add('game-ready');
   if (pendingOffline) ui.showOffline(pendingOffline);
+  if (unreadableSetAside) ui.toast('An earlier save could not be read. It has been kept aside and a new game started.', 'warn');
   ui.update();
 
   // ---------------------------------------------------------------- the loop
   let lastFrame = performance.now();
-  let hiddenAt = 0;
+  // A page opened in a background tab starts hidden and gets no "hidden" event to say so.
+  let hiddenAt = document.hidden ? Date.now() : 0;
+  if (hiddenAt) state.lastSeen = hiddenAt;
   let sinceUi = 0;
   let sinceSave = 0;
   let sinceSecond = 0;
@@ -441,6 +531,7 @@ async function start(): Promise<void> {
   }
 
   function advance(dt: number): void {
+    sessionSeconds += dt;
     tick(state, dt);
     session.update(Math.min(dt, 0.25));
 
@@ -512,6 +603,8 @@ async function start(): Promise<void> {
     hiddenAt = 0;
     lastFrame = performance.now();
     if (playing) platform.gameplayStart();
+    // Another tab may have played on while this one was in the background.
+    if (adoptForeignSave()) return;
     if (awaySeconds >= OFFLINE_GAP_SECONDS) {
       const report = applyOffline(state, Date.now());
       if (report) {
@@ -527,6 +620,10 @@ async function start(): Promise<void> {
     ui.update();
   });
   window.addEventListener('pagehide', () => save(true));
+  // A page restored from the back-forward cache may be older than what has been saved since.
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) adoptForeignSave();
+  });
 
   // ---------------------------------------------------------------- test hooks
   // Only with ?e2e in the address: lets the browser tests reach inside without a debug build.
