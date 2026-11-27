@@ -3,7 +3,7 @@
 
 import './ui/styles.css';
 
-import { createAudio } from './audio/audio.ts';
+import { createAudio, measureAudio } from './audio/audio.ts';
 import type { AudioEngine, CreatureView, Renderer, Ui, UiHost } from './contracts.ts';
 import { formatDuration, formatNumber } from './core/format.ts';
 import { mulberry32 } from './core/rng.ts';
@@ -494,6 +494,8 @@ async function start(): Promise<void> {
   }
   window.addEventListener('pointerdown', firstGesture, { passive: true });
   window.addEventListener('keydown', firstGesture);
+  // On a touch screen a browser may only allow sound to start as the finger lifts.
+  for (const type of ['pointerup', 'touchend', 'click']) window.addEventListener(type, () => audio?.unlock(), { passive: true });
 
   ui.canvas.addEventListener('pointerdown', (event) => {
     if (paused || ui.modalOpen) return;
@@ -640,6 +642,7 @@ async function start(): Promise<void> {
         ui.update();
       },
       save: () => save(true),
+      measureAudio,
       describe: () => ({
         lumens: state.lumens,
         depthStep: state.depthStep,
